@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-openai_api_key = st.secrets["api_key"]
+openai_api_key = os.getenv("api_key")
 client = OpenAI(api_key=openai_api_key)
 
 def evaluate_performance(questions):
