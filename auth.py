@@ -1,11 +1,10 @@
 import streamlit as st
 import json
 
-# Path to the JSON file
+# link to JSON file
 users_file = "users.json"
 
 def load_users(file_path):
-    """Load user data from a JSON file."""
     try:
         with open(file_path, "r") as f:
             users = json.load(f)
@@ -20,6 +19,7 @@ def load_users(file_path):
 def login():
     if "username" not in st.session_state:
         st.session_state.username = None
+        st.session_state.role = None
 
     if st.session_state.username is None:
         st.title("Login")
@@ -29,12 +29,19 @@ def login():
             submit_button = st.form_submit_button("Login")
 
             if submit_button:
-                users = load_users(users_file)  # Load users from JSON file
-                if username in users and users[username] == password:
-                    st.session_state.username = username
-                    st.success(f"Logged in as {username}")
-                    return True
+                users = load_users(users_file)  # load users
+                if username in users:
+                    user_data = users[username]
+                    if user_data["password"] == password:
+                        st.session_state.username = username
+                        st.session_state.role = user_data["role"]
+                        st.success(f"{username} password verified. Press enter again to confirm log in")
+                        return True
+                    else:
+                        st.error("Invalid password.")
                 else:
-                    st.error("Invalid username or password")
-                    return False
+                    st.error("Username not found.")
+                return False
+    else:
+        st.info(f"Logged in as {st.session_state.username} ({st.session_state.role})")
     return st.session_state.username is not None
