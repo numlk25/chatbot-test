@@ -82,21 +82,24 @@ def display_tutor_ui():
         display_df = pd.DataFrame(filtered_data)
     else:
         display_df = df if not show_top_5 else df.head(5)
-
-    # Display unified table
+    
+    # Display data or show "No data found" message
     st.write("### Student Data (for best viewing, download and top left align):")
-    st.dataframe(display_df[['ID', 'Student', 'Timestamp', 'Grade', 'Questions', 'Feedback']], width=1000, height=400)
-
+    if not display_df.empty:
+        st.dataframe(display_df[['ID', 'Student', 'Timestamp', 'Grade', 'Questions', 'Feedback']], width=1000, height=400)
+    else:
+        st.write("No data found for the current query.")
+    
     # Add conversation finder
     st.write("### Conversation Finder:")
     conversation_search_id = st.text_input("Search conversation logs by ID", "").strip()
-
+    
     # Check if the ID exists in conversation data to pull up conversation log
     if conversation_search_id:
         matching_logs = [
             entry for entry in conversation_data if str(entry['id']) == conversation_search_id
         ]
-
+    
         if matching_logs:
             log = matching_logs[0]
             st.write(f"### Conversation Log for ID {log['id']} - {log['username']} ({log['timestamp']}):")
