@@ -3,8 +3,40 @@ from openai import OpenAI
 import json
 import os
 from datetime import datetime
+import sqlite3
+from datetime import datetime
+import os
+import streamlit as st
 
-openai_api_key = st.secrets["openai"]["api_key"]  # fetch API key from Streamlit secrets
+# Initialize SQLite database connection
+db_path = "data.db"  # Name of the SQLite database file
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
+
+# Create tables if they don't exist
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS student_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    timestamp TEXT,
+    grade TEXT,
+    questions TEXT,
+    feedback TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS student_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT,
+    timestamp TEXT,
+    messages TEXT
+)
+""")
+conn.commit()
+
+
+openai_api_key = os.getenv('api_key') # fetch API key from Streamlit secrets
 client = OpenAI(api_key=openai_api_key)
 
 # function for loading text files
@@ -71,33 +103,19 @@ def evaluate_performance(questions):
 
 
 def save_student_data(username, grade, questions, feedback):
-    # Define file path
-    file_path = "student_data.json"
+    """
+    Save student's performance data into SQLite database.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    questions_text = "\n".join(questions)  # Store questions as a single string
     
-    # Generate the next unique ID
-    new_id = get_next_id(file_path)
-
-    # Create a data structure for the new entry, including ID and feedback
-    new_entry = {
-        "id": new_id,
-        "username": username,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "grade": grade,
-        "questions": questions,
-        "feedback": feedback
-    }
-    
-    # Load existing data and append the new entry
-    with open(file_path, "r+") as file:
-        try:
-            current_data = json.load(file)  # Load current JSON data
-        except json.JSONDecodeError:
-            current_data = []  # Start fresh if the file is empty or corrupt
-
-        current_data.append(new_entry)  # Append new student data
-        file.seek(0)  # Move to the start of the file
-        json.dump(current_data, file, indent=4)  # Write updated data
-
+    # Insert into the database
+    cursor.execute("""
+    INSERT INTO student_data (username, timestamp, grade, questions, feedback)
+    VALUES (?, ?, ?, ?, ?)
+    """, (username, timestamp, grade, questions_text, feedback))
+    conn.commit()
+    st.success("Student data saved successfully!")
 
 
 
@@ -136,47 +154,43 @@ def chatbot_page():
 
     """Conversation functions"""
 
-    # Load user-specific conversations on startup
-    def load_conversations(username):
-        try:
-            with open(conversation_file, "r") as file:
-                conversations = json.load(file)
-            return [conv for conv in conversations if conv["username"] == username]
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []  # Return an empty list if the file is missing or corrupt
+def load_conversations(username):
+    """
+    Load conversations for a specific user from the database.
+    """
+    cursor.execute("""
+    SELECT messages FROM student_conversations
+    WHERE username = ?
+    ORDER BY timestamp DESC
+    """, (username,))
+    
+    results = cursor.fetchall()
+    conversations = [
+        [{"role": "user" if line.startswith("user:") else "assistant", 
+          "content": line.split(": ", 1)[1]} 
+         for line in result[0].split("\n")]
+        for result in results
+    ]
+    return conversations
 
-    def save_conversation(username, conversation):
-        """Save the filtered conversation to a file."""
-        # Define file path
-        file_path = "student_conversations.json"
-        
-        # Generate the next unique ID
-        new_id = get_next_id(file_path)
 
-        # Filter out system messages from the conversation
-        filtered_conversation = [msg for msg in conversation if msg["role"] != "system"]
-
-        # Create a new conversation entry with a unique ID
-        new_entry = {
-            "id": new_id,
-            "username": username,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "messages": filtered_conversation  # Save only filtered messages
-        }
-        
-        try:
-            with open(file_path, "r+") as file:
-                try:
-                    data = json.load(file)
-                except json.JSONDecodeError:
-                    data = []  # Initialize empty list if file is empty or corrupted
-
-                data.append(new_entry)
-                file.seek(0)
-                json.dump(data, file, indent=4)
-        except FileNotFoundError:
-            with open(file_path, "w") as file:
-                json.dump([new_entry], file, indent=4)
+def save_conversation(username, conversation):
+    """
+    Save conversation data into SQLite database.
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Filter out system messages and store messages as a single string
+    filtered_conversation = [msg for msg in conversation if msg["role"] != "system"]
+    conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_conversation])
+    
+    # Insert into the database
+    cursor.execute("""
+    INSERT INTO student_conversations (username, timestamp, messages)
+    VALUES (?, ?, ?)
+    """, (username, timestamp, conversation_text))
+    conn.commit()
+    st.success("Conversation saved successfully!")
 
 
     def reset_conversation():
@@ -204,11 +218,10 @@ def chatbot_page():
 
 
 
+
     # Load user's conversations on app load
     st.session_state.conversations = load_conversations(st.session_state.username)
-
-
-
+    
     # Sidebar: Display previous conversations
     st.sidebar.title(f"{st.session_state.username}'s Past Conversations")
     if st.session_state.conversations:
@@ -216,9 +229,10 @@ def chatbot_page():
             if st.sidebar.button(f"Load Conversation {idx + 1}"):
                 # Set review mode
                 st.session_state.is_review_mode = True
-                st.session_state.messages = conv["messages"]
-                st.session_state.conversation_ended = True  # Ensure conversation is treated as ended
-                st.session_state.user_questions = [msg["content"] for msg in conv["messages"] if msg["role"] == "user"]
+                st.session_state.messages = conv
+                st.session_state.conversation_ended = True
+                st.session_state.user_questions = [msg["content"] for msg in conv if msg["role"] == "user"]
+
 
     # Reset review mode when starting a new conversation
     if st.button("🔥 Start New Conversation (remember to save your conversations!)"):
@@ -263,4 +277,7 @@ def chatbot_page():
         save_conversation(st.session_state.username, st.session_state.messages)
         save_student_data(st.session_state.username, grade, st.session_state.user_questions, feedback)  # Pass feedback to save
         st.markdown(f"**Feedback:** {feedback.strip()}")
+        conn.close()
         st.stop()
+
+
