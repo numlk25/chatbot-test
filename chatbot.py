@@ -1,12 +1,9 @@
 import streamlit as st
-from openai import OpenAI
-import json
-import os
-from datetime import datetime
 import sqlite3
 from datetime import datetime
+from openai import OpenAI
 import os
-import streamlit as st
+import json
 
 # Initialize SQLite database connection
 db_path = "data.db"  # Name of the SQLite database file
@@ -35,33 +32,20 @@ CREATE TABLE IF NOT EXISTS student_conversations (
 """)
 conn.commit()
 
-
-openai_api_key = os.getenv('api_key') # fetch API key from Streamlit secrets
+# Load API key
+openai_api_key = os.getenv("api_key")  # Ensure the key is set in the environment variables
 client = OpenAI(api_key=openai_api_key)
 
-# function for loading text files
+# Function to load text files
 def load_file(filename):
     with open(filename, "r") as file:
         return file.read()
 
-# load files for context and grading criteria
+# Load context and grading criteria
 interviewee_context = load_file("context.txt")
 grading_criteria = load_file("grading_criteria.txt")
 
-def get_next_id(file_path):
-    try:
-        with open(file_path, "r") as file:
-            data = json.load(file)
-            if not data:
-                return 0  # start with ID 0 if the file is empty
-            # get the maximum ID, add 1
-            max_id = max(entry.get("id", 0) for entry in data)
-            return max_id + 1
-    except (FileNotFoundError, json.JSONDecodeError):
-        return 0  #start with ID 0 if file is missing or corrupt
-
-
-
+# Helper function to evaluate performance
 def evaluate_performance(questions):
     performance_prompt = f"""
     {grading_criteria}
@@ -83,33 +67,27 @@ def evaluate_performance(questions):
 
     # Process the streaming response
     for chunk in stream:
-        content = getattr(chunk.choices[0].delta, 'content', '') or ''
+        content = getattr(chunk.choices[0].delta, "content", "") or ""
         feedback_response += content
 
-    # Use string methods to find and extract the grade
+    # Extract grade
     grade_marker = "Grade:"
-    grade_start = feedback_response.find(grade_marker)  # Find where "Grade:" appears
+    grade_start = feedback_response.find(grade_marker)
 
-    if grade_start != -1:  # Ensure "Grade:" was found
-        grade_start += len(grade_marker)  # Move the pointer to after "Grade:"
-        grade = feedback_response[grade_start:grade_start+2].strip()  # Extract 1 or 2 characters and trim whitespace
-        feedback_response = feedback_response[:grade_start-len(grade_marker)].strip()  # Remove the grade from the feedback
+    if grade_start != -1:
+        grade_start += len(grade_marker)
+        grade = feedback_response[grade_start:grade_start+2].strip()
+        feedback_response = feedback_response[:grade_start-len(grade_marker)].strip()
     else:
         grade = "Grade not found, please review manually."
 
-    # Return the feedback without the grade, but store the grade internally
     return feedback_response, grade
 
-
-
+# Function to save student data
 def save_student_data(username, grade, questions, feedback):
-    """
-    Save student's performance data into SQLite database.
-    """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    questions_text = "\n".join(questions)  # Store questions as a single string
+    questions_text = "\n".join(questions)
     
-    # Insert into the database
     cursor.execute("""
     INSERT INTO student_data (username, timestamp, grade, questions, feedback)
     VALUES (?, ?, ?, ?, ?)
@@ -117,13 +95,49 @@ def save_student_data(username, grade, questions, feedback):
     conn.commit()
     st.success("Student data saved successfully!")
 
-
-
-def chatbot_page():
+# Function to save a conversation
+def save_conversation(username, conversation):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    filtered_conversation = [msg for msg in conversation if msg["role"] != "system"]
+    conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_conversation])
     
+    cursor.execute("""
+    INSERT INTO student_conversations (username, timestamp, messages)
+    VALUES (?, ?, ?)
+    """, (username, timestamp, conversation_text))
+    conn.commit()
+    st.success("Conversation saved successfully!")
+
+# Function to load previous conversations for a user
+def load_conversations(username):
+    cursor.execute("""
+    SELECT messages FROM student_conversations
+    WHERE username = ?
+    ORDER BY timestamp DESC
+    """, (username,))
+    results = cursor.fetchall()
+    conversations = [
+        [{"role": "user" if line.startswith("user:") else "assistant", 
+          "content": line.split(": ", 1)[1]} 
+         for line in result[0].split("\n")]
+        for result in results
+    ]
+    return conversations
+
+# Function to reset conversation
+def reset_conversation():
+    st.session_state.messages = [
+        {"role": "system", "content": interviewee_context},
+        {"role": "assistant", "content": "Hi, I'm here to help you with questions about the manufacturing process."}
+    ]
+    st.session_state.user_questions = []
+    st.session_state.conversation_ended = False
+
+# Chatbot page
+def chatbot_page():
     # Initialize session state attributes
     if "conversations" not in st.session_state:
-        st.session_state.conversations = []  
+        st.session_state.conversations = []
 
     if "messages" not in st.session_state:
         st.session_state.messages = [
@@ -140,113 +154,41 @@ def chatbot_page():
     if "conversation_ended" not in st.session_state:
         st.session_state.conversation_ended = False
 
+    if "is_review_mode" not in st.session_state:
+        st.session_state.is_review_mode = False
+
     st.title("📋 Interview Practice Chatbot")
     st.write(
         "This is an interview practice chatbot where you can ask questions related to the manufacturing process. "
         "You will receive feedback on your performance at the end of the conversation."
     )
 
-
-
-    conversation_file = "student_conversations.json"
-
-
-
-    """Conversation functions"""
-
-def load_conversations(username):
-    """
-    Load conversations for a specific user from the database.
-    """
-    cursor.execute("""
-    SELECT messages FROM student_conversations
-    WHERE username = ?
-    ORDER BY timestamp DESC
-    """, (username,))
-    
-    results = cursor.fetchall()
-    conversations = [
-        [{"role": "user" if line.startswith("user:") else "assistant", 
-          "content": line.split(": ", 1)[1]} 
-         for line in result[0].split("\n")]
-        for result in results
-    ]
-    return conversations
-
-
-def save_conversation(username, conversation):
-    """
-    Save conversation data into SQLite database.
-    """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Filter out system messages and store messages as a single string
-    filtered_conversation = [msg for msg in conversation if msg["role"] != "system"]
-    conversation_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_conversation])
-    
-    # Insert into the database
-    cursor.execute("""
-    INSERT INTO student_conversations (username, timestamp, messages)
-    VALUES (?, ?, ?)
-    """, (username, timestamp, conversation_text))
-    conn.commit()
-    st.success("Conversation saved successfully!")
-
-
-    def reset_conversation():
-        """Reset session state for starting a new conversation."""
-        st.session_state.messages = [
-            {"role": "system", "content": interviewee_context},  # Hidden system message
-            {"role": "assistant", "content": "Hi, I'm here to help you with questions about the manufacturing process."}
-        ]
-        st.session_state.user_questions = []
-        st.session_state.conversation_ended = False
-
-
-
-    if "conversations" not in st.session_state:
-        st.session_state.conversations = []  
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "system", "content": interviewee_context},
-            {"role": "assistant", "content": "Hi, I'm here to help you with questions about the manufacturing process."}
-        ]
-    if "user_questions" not in st.session_state:
-        st.session_state.user_questions = []
-    if "username" not in st.session_state:
-        st.session_state.username = "guest"
-
-
-
-
     # Load user's conversations on app load
     st.session_state.conversations = load_conversations(st.session_state.username)
-    
+
     # Sidebar: Display previous conversations
     st.sidebar.title(f"{st.session_state.username}'s Past Conversations")
     if st.session_state.conversations:
         for idx, conv in enumerate(st.session_state.conversations):
             if st.sidebar.button(f"Load Conversation {idx + 1}"):
-                # Set review mode
                 st.session_state.is_review_mode = True
                 st.session_state.messages = conv
                 st.session_state.conversation_ended = True
                 st.session_state.user_questions = [msg["content"] for msg in conv if msg["role"] == "user"]
 
-
     # Reset review mode when starting a new conversation
     if st.button("🔥 Start New Conversation (remember to save your conversations!)"):
         reset_conversation()
-        st.session_state.is_review_mode = False  # Allow editing for new conversation
+        st.session_state.is_review_mode = False
 
     # Display current conversation
     for message in st.session_state.messages:
-        if message["role"] != "system":  # Skip displaying the system message
+        if message["role"] != "system":
             role = "assistant" if message["role"] == "assistant" else "user"
             st.chat_message(role).markdown(message["content"])
 
-    # Disable inputs in review mode
-    if not st.session_state.conversation_ended or not st.session_state.is_review_mode:
+    # Chat input and assistant response
+    if not st.session_state.conversation_ended and not st.session_state.is_review_mode:
         if user_input := st.chat_input("Ask a question about the manufacturing process:", key="user_input"):
             st.session_state.messages.append({"role": "user", "content": user_input})
             st.session_state.user_questions.append(user_input)
@@ -269,15 +211,11 @@ def save_conversation(username, conversation):
     else:
         st.write("This is a previously saved conversation and cannot be edited.")
 
-    # Handle conversation end and saving to file
+    # Handle conversation end and saving
     if st.button("Save and End Conversation") and not st.session_state.conversation_ended and not st.session_state.is_review_mode:
         st.markdown("### Analyzing your performance...")
         st.session_state.conversation_ended = True
         feedback, grade = evaluate_performance(st.session_state.user_questions)
         save_conversation(st.session_state.username, st.session_state.messages)
-        save_student_data(st.session_state.username, grade, st.session_state.user_questions, feedback)  # Pass feedback to save
+        save_student_data(st.session_state.username, grade, st.session_state.user_questions, feedback)
         st.markdown(f"**Feedback:** {feedback.strip()}")
-        conn.close()
-        st.stop()
-
-
