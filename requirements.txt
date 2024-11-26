@@ -1,6 +1,2 @@
 streamlit
 openai
-os
-json
-datetime
-sqlite3
