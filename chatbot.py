@@ -109,7 +109,7 @@ def save_conversation(username, conversation):
     conn.commit()
     st.success("Conversation saved successfully!")
 
-# Function to load previous conversations for a user
+
 def load_conversations(username):
     cursor.execute("""
     SELECT messages FROM student_conversations
@@ -117,13 +117,26 @@ def load_conversations(username):
     ORDER BY timestamp ASC
     """, (username,))
     results = cursor.fetchall()
-    conversations = [
-        [{"role": "user" if line.startswith("user:") else "assistant", 
-          "content": line.split(": ", 1)[1]} 
-         for line in result[0].split("\n")]
-        for result in results
-    ]
+
+    conversations = []
+    for result in results:
+        raw_messages = result[0]
+        if not raw_messages:  # Handle empty messages field
+            continue
+        try:
+            conversation = [
+                {
+                    "role": "user" if line.startswith("user:") else "assistant",
+                    "content": line.split(": ", 1)[1]
+                }
+                for line in raw_messages.split("\n") if ": " in line
+            ]
+            conversations.append(conversation)
+        except Exception as e:
+            st.error(f"Error processing conversation data: {e}")
+            continue
     return conversations
+    
 
 # Function to reset conversation
 def reset_conversation():
@@ -133,6 +146,7 @@ def reset_conversation():
     ]
     st.session_state.user_questions = []
     st.session_state.conversation_ended = False
+
 
 # Chatbot page
 def chatbot_page():
