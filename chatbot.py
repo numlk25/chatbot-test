@@ -1,3 +1,4 @@
+
 import streamlit as st
 import sqlite3
 from datetime import datetime
@@ -113,7 +114,7 @@ def load_conversations(username):
     cursor.execute("""
     SELECT messages FROM student_conversations
     WHERE username = ?
-    ORDER BY timestamp DESC
+    ORDER BY timestamp ASC
     """, (username,))
     results = cursor.fetchall()
     conversations = [
