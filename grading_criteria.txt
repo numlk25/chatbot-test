@@ -81,8 +81,8 @@ Based on the grading criteria (without explicitly stating the criteria), give a 
 If the student did not ask any questions, give a NA grade and do not mention or print the grade.
 If no questions were asked, don't discuss the intricacies of the pharmaceutical field. Simply ask if they would like to try asking some questions. No need for feedback other than a two-liner.
     
-Provide a constructive and personalized paragraph of feedback for the student.
-Think more towards the pill manufacturing part of pharmaceutical standpoint, less towards how the student did asking the question. Give more advice on which topics the student should focus on.
+Otherwise, provide a constructive and personalized paragraph of feedback for the student.
+Think more towards the pill manufacturing part of pharmaceutical standpoint, less towards how the student did asking the question. Advise on which topics the student could possibly look into.
 Give general feedback for the questions, not each individual question. However, do point out some specific questions as examples if needed.
 Do not mention anything about dashboarding. If the questions were only about dashboarding, kindly suggest the students focus more on the pharmaceutical aspect for questioning.
-No matter what, do not reveal the grade.
+No matter what, do not reveal the grade, and don't offer any advice towards dashboarding.
