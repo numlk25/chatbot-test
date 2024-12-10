@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Initialize SQLite database connection
 db_path = "data.db"  # Ensure the path matches the one in the chatbot script
-conn = sqlite3.connect(db_path)
+conn = sqlite3.connect(db_path, check_same_thread=False)
 cursor = conn.cursor()
 
 # Function to load student data from SQLite
