@@ -8,7 +8,7 @@ import json
 
 # Initialize SQLite database connection
 db_path = "data.db"  # Name of the SQLite database file
-conn = sqlite3.connect(db_path)
+conn = sqlite3.connect(db_path, check_same_thread=False)
 cursor = conn.cursor()
 
 # Create tables if they don't exist
