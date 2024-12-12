@@ -91,20 +91,21 @@ def display_tutor_ui():
         # exclude entries with "Grade not found, please review manually"
         and entry['Grade'].lower() != "grade not found, please review manually"
     ]
-
+    
+    # convert to DataFrame
+    filtered_df = pd.DataFrame(filtered_data)
+    
+    # apply top5 filtering if checkbox is ticked
+    if show_top_5 and not filtered_df.empty:
+        filtered_df = filtered_df.head(5)
     
     # display data
-    if search_query:
-        display_df = pd.DataFrame(filtered_data)
-    else:
-        display_df = df if not show_top_5 else df.head(5)
-    
-    # catch for no data
     st.write("### Student Data (for best viewing, download and top left align):")
-    if not display_df.empty:
-        st.dataframe(display_df[['ID', 'Student', 'Timestamp', 'Grade', 'Questions', 'Feedback']], width=1000, height=400)
+    if not filtered_df.empty:
+        st.dataframe(filtered_df[['ID', 'Student', 'Timestamp', 'Grade', 'Questions', 'Feedback']], width=1000, height=400)
     else:
         st.write("No data found for the current query.")
+
 
     st.markdown('##')
 
@@ -151,5 +152,6 @@ def display_tutor_ui():
                 st.markdown(f"**{current_role.capitalize()}:** {'\n'.join(current_message)}")
         else:
             st.write("No conversation log found for the given ID.")
+            
     if __name__ == "__main__":
         display_tutor_ui()
