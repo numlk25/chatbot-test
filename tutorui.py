@@ -3,36 +3,39 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# Initialize SQLite database connection
-db_path = "data.db"  # Ensure the path matches the one in the chatbot script
+
+# initialize SQLite database connection
+db_path = "datab.db"
 conn = sqlite3.connect(db_path, check_same_thread=False)
 cursor = conn.cursor()
 
-# Function to load student data from SQLite
+
+# function to load student data
 def load_student_data():
     cursor.execute("SELECT * FROM student_data")
-    columns = [desc[0] for desc in cursor.description]
     rows = cursor.fetchall()
+    columns = [desc[0].lower() for desc in cursor.description] 
     data = [dict(zip(columns, row)) for row in rows]
     return data
 
-# Function to load conversation data from SQLite
+# function to load conversation data
 def load_conversation_data():
     cursor.execute("SELECT * FROM student_conversations")
-    columns = [desc[0] for desc in cursor.description]
     rows = cursor.fetchall()
+    columns = [desc[0].lower() for desc in cursor.description]
     data = [dict(zip(columns, row)) for row in rows]
     return data
 
-# Display Tutor UI
+
+# tutor UI
 def display_tutor_ui():
     st.title("📋 Tutor Dashboard")
     
-    # Load student data and conversation logs
+    # load student data and conversation logs
     student_data = load_student_data()
     conversation_data = load_conversation_data()
 
-    # Process student data for display
+    # process student data for display
     table_data = []
     for entry in student_data:
         table_data.append({
@@ -44,26 +47,38 @@ def display_tutor_ui():
             "Feedback": entry["feedback"]
         })
 
-    # Convert table data to a DataFrame and sort by timestamp
-    df = pd.DataFrame(table_data)
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    # if no data, create empty DataFrame
+    if not table_data:
+        df = pd.DataFrame(columns=["ID", "Student", "Timestamp", "Grade", "Questions", "Feedback"])
+    else:
+        df = pd.DataFrame(table_data)
+
+    if "Timestamp" in df.columns:
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    else:
+        st.error("Timestamp column not found in student data!")
+        return
+
+
+    # sort by time
     df = df.sort_values(by=['Timestamp'], ascending=False)
 
-    # Toggle button for showing only the top 5 rows
+    # toggle button for showing top 5 rows
     show_top_5 = st.checkbox("Show Only Top 5 Rows (Unfiltered Data)", value=True)
 
-    # Create a search bar
+    
+    # search bar
     search_query = st.text_input("Search student data by student name, grade, or ID", "").strip().lower()
 
-    # Apply search filters
+    # apply search filters
     filtered_data = [
         entry for entry in table_data
         if (
-            # Check if the query is a grade ("a", "b", "c", "d") and matches the grade
+            # check if the query is a grade ("a", "b", "c", "d") and match grade
             (len(search_query) == 1 and search_query in ["a", "b", "c", "d"] 
              and entry['Grade'].lower() == search_query)
             or
-            # Otherwise, treat the query as a student name or ID
+            # else treat the query as a student name or ID
             (
                 len(search_query) > 1
                 or search_query not in ["a", "b", "c", "d"]
@@ -73,28 +88,32 @@ def display_tutor_ui():
                 or search_query in str(entry['ID']).lower()
             )
         )
-        # Exclude entries with "Grade not found, please review manually"
+        # exclude entries with "Grade not found, please review manually"
         and entry['Grade'].lower() != "grade not found, please review manually"
     ]
 
-    # Data for display
+    
+    # display data
     if search_query:
         display_df = pd.DataFrame(filtered_data)
     else:
         display_df = df if not show_top_5 else df.head(5)
     
-    # Display data or show "No data found" message
+    # catch for no data
     st.write("### Student Data (for best viewing, download and top left align):")
     if not display_df.empty:
         st.dataframe(display_df[['ID', 'Student', 'Timestamp', 'Grade', 'Questions', 'Feedback']], width=1000, height=400)
     else:
         st.write("No data found for the current query.")
+
+    st.markdown('##')
+
     
-    # Add conversation finder
+    # add conversation transcript finder
     st.write("### Conversation Finder:")
     conversation_search_id = st.text_input("Search conversation logs by ID", "").strip()
     
-    # Check if the ID exists in conversation data to pull up conversation log
+    # check if the ID exists in conversation data to pull up conversation log
     if conversation_search_id:
         matching_logs = [
             entry for entry in conversation_data if str(entry['id']) == conversation_search_id
@@ -103,19 +122,34 @@ def display_tutor_ui():
         if matching_logs:
             log = matching_logs[0]
             st.write(f"### Conversation Log for ID {log['id']} - {log['username']} ({log['timestamp']}):")
-            for message in log["messages"].split("\n"):
-                if message.startswith("user:"):
-                    role = "User"
-                    content = message[5:]
-                elif message.startswith("assistant:"):
-                    role = "Assistant"
-                    content = message[10:]
+            
+            # join as one block
+            conversation_lines = log["messages"].split("\n")
+            
+            # accumulate user and assistant messages
+            current_role = None
+            current_message = []
+    
+            for line in conversation_lines:
+                if line.startswith("user:"):
+                    # when new user message, flush previous message
+                    if current_role == "user" or current_role == "assistant":
+                        st.markdown(f"**{current_role.capitalize()}:** {'\n'.join(current_message)}")
+                    current_role = "user"
+                    current_message = [line[5:].strip()]  # remove "user:" part
+                elif line.startswith("assistant:"):
+                    # same but for assistant
+                    if current_role == "user" or current_role == "assistant":
+                        st.markdown(f"**{current_role.capitalize()}:** {'\n'.join(current_message)}")
+                    current_role = "assistant"
+                    current_message = [line[10:].strip()]
                 else:
-                    continue
-                st.write(f"**{role}:** {content}")
+                    # continue appending messages
+                    current_message.append(line.strip())
+    
+            if current_role:
+                st.markdown(f"**{current_role.capitalize()}:** {'\n'.join(current_message)}")
         else:
             st.write("No conversation log found for the given ID.")
-
-# Run the UI
-if __name__ == "__main__":
-    display_tutor_ui()
+    if __name__ == "__main__":
+        display_tutor_ui()

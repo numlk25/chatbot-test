@@ -32,11 +32,11 @@ def logout():
 # login logic
 if not st.session_state.logged_in:
     st.title("Login Page")
-    if login():  # calls the login function from auth.py
+    if login():  # call login from auth.py
         st.session_state.logged_in = True
-        # assign the username and role after successful login
+        # assign username and role 
         st.session_state.username = st.session_state.username or "guest"
-        role = st.session_state.role  # Ensure role is set by the `login` function
+        role = st.session_state.role  # role set by the login function
         if role == "student":
             go_to_chatbot()
         elif role == "tutor":
